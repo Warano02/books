@@ -1,7 +1,7 @@
 
 import BookCard from "@/components/BookCard";
 import HeroSection from "@/components/HeroSection";
-import { sampleBooks } from "@/lib/contants";
+import { sampleBooks } from "@/lib/constants";
 
 function page() {
   return (

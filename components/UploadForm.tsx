@@ -4,6 +4,12 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Image, Upload } from 'lucide-react'
+import { useAuth } from '@clerk/nextjs'
+import { toast } from 'sonner'
+import { checkBookExists, createBook, saveBookSegments } from '@/lib/actions/book.action'
+import { useRouter } from 'next/navigation'
+import { parsePDFFile } from '@/lib/utils'
+import { upload } from '@vercel/blob/client'
 
 // zod schema for the form
 const MAX_PDF_SIZE = 50 * 1024 * 1024 // 50MB
@@ -27,7 +33,10 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>
 
 function UploadForm() {
+    const router = useRouter()
+
     const [submitting, setSubmitting] = useState(false)
+    const { userId } = useAuth()
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -53,10 +62,71 @@ function UploadForm() {
     const voice = watch('voice')
 
     const onSubmit = async (data: FormValues) => {
+        if (!userId) return toast.error("You must be logged in to upload a book")
         setSubmitting(true)
         try {
-            console.log('submitted', data)
-            await new Promise(resolve => setTimeout(resolve, 1500))
+            const exist = await checkBookExists(data.title)
+            if (exist.exists) {
+                toast.info("A book with this title already exists. Please choose a different title.")
+                setSubmitting(false)
+                form.reset()
+                return router.push(`/books/${exist.data.slug}`)
+            }
+
+            const fileTitle = data.title.trim().toLowerCase().replace(/\s+/g, '-')
+            const fileAuthor = data.author.trim().toLowerCase().replace(/\s+/g, '-')
+            const fileName = `${fileTitle}-${fileAuthor}.pdf`
+            const pdfFile = data.pdfFile[0]
+            const parsePdf = await parsePDFFile(pdfFile)
+
+            if (!parsePdf.content.length) return toast.error("Failed to parse PDF content. Please try a different file.")
+            const uploadedPdf = await upload(fileName, pdfFile, {
+                access: 'public',
+                handleUploadUrl: `/api/upload`,
+                contentType: "application/pdf"
+            })
+
+            let coverURL = ''
+            if (data.coverImage) {
+                const coverFile = data.coverImage[0]
+                const coverName = `${fileTitle}-${fileAuthor}-cover${coverFile.name.substring(coverFile.name.lastIndexOf('.'))}`
+                const uploadedCover = await upload(coverName, coverFile, {
+                    access: 'public',
+                    handleUploadUrl: `/api/upload`,
+                    contentType: coverFile.type
+                })
+                coverURL = uploadedCover.url
+            } else {
+                const response = await fetch(parsePdf.cover)
+                const blob = await response.blob()
+                const coverName = `${fileTitle}-${fileAuthor}-cover.jpg`
+                const uploadedCover = await upload(coverName, blob, {
+                    access: 'public',
+                    handleUploadUrl: `/api/upload`,
+                    contentType: "image/jpeg"
+                })
+                coverURL = uploadedCover.url
+            }
+
+            const book = await createBook({
+                clerkId: userId,
+                title: data.title,
+                author: data.author,
+                persona: data.voice,
+                coverURL,
+                fileURL: uploadedPdf.url,
+                fileBlobKey: uploadedPdf.etag,
+                coverBlobKey: uploadedPdf.etag,
+                fileSize: pdfFile.size,
+            })
+            if (!book.success) throw new Error(book.error)
+
+            const segments = await saveBookSegments(book.data._id, userId, parsePdf.content)
+            if (!segments.success) throw new Error(segments.error)
+
+            toast.success("Book uploaded successfully!")
+            form.reset()
+            router.replace("/")
         } finally {
             setSubmitting(false)
         }
@@ -114,70 +184,70 @@ function UploadForm() {
                         onClick={() => document.getElementById('cover-input')?.click()}
                     >
                         <Image className="upload-dropzone-icon" />
-                   
-                    <div className="upload-dropzone-text">
-                        Click to upload cover image
+
+                        <div className="upload-dropzone-text">
+                            Click to upload cover image
+                        </div>
+                        <div className="upload-dropzone-hint">
+                            Leave empty to auto-generate from PDF
+                        </div>
+                        <input
+                            id="cover-input"
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={e => {
+                                const file = e.target.files?.[0] ?? null
+                                setValue('coverImage', file)
+                            }}
+                        />
                     </div>
-                    <div className="upload-dropzone-hint">
-                        Leave empty to auto-generate from PDF
-                    </div>
-                    <input
-                        id="cover-input"
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => {
-                            const file = e.target.files?.[0] ?? null
-                            setValue('coverImage', file)
-                        }}
-                    />
+                    {coverImage && (
+                        <div className="mt-2 flex items-center justify-between">
+                            <span className="text-sm">{coverImage.name}</span>
+                            <span
+                                className="upload-dropzone-remove"
+                                onClick={() => setValue('coverImage', null)}
+                            >
+                                &times;
+                            </span>
+                        </div>
+                    )}
+                    {errors.coverImage && (
+                        <p className="text-red-600 text-sm">{errors.coverImage.message?.toString()}</p>
+                    )}
                 </div>
-                {coverImage && (
-                    <div className="mt-2 flex items-center justify-between">
-                        <span className="text-sm">{coverImage.name}</span>
-                        <span
-                            className="upload-dropzone-remove"
-                            onClick={() => setValue('coverImage', null)}
-                        >
-                            &times;
-                        </span>
-                    </div>
-                )}
-                {errors.coverImage && (
-                    <p className="text-red-600 text-sm">{errors.coverImage.message?.toString()}</p>
-                )}
-        </div>
 
-    <div>
-        <label className="form-label" htmlFor="title">
-            Title
-        </label>
-        <input
-            id="title"
-            className="form-input"
-            placeholder="ex: Rich Dad Poor Dad"
-            {...register('title')}
-        />
-        {errors.title && (
-            <p className="text-red-600 text-sm">{errors.title.message}</p>
-        )}
-    </div>
+                <div>
+                    <label className="form-label" htmlFor="title">
+                        Title
+                    </label>
+                    <input
+                        id="title"
+                        className="form-input"
+                        placeholder="ex: Rich Dad Poor Dad"
+                        {...register('title')}
+                    />
+                    {errors.title && (
+                        <p className="text-red-600 text-sm">{errors.title.message}</p>
+                    )}
+                </div>
 
 
-    <div>
-        <label className="form-label" htmlFor="author">
-            Author Name
-        </label>
-        <input
-            id="author"
-            className="form-input"
-            placeholder="ex: Robert Kiyosaki"
-            {...register('author')}
-        />
-        {errors.author && (
-            <p className="text-red-600 text-sm">{errors.author.message}</p>
-        )}
-    </div>
+                <div>
+                    <label className="form-label" htmlFor="author">
+                        Author Name
+                    </label>
+                    <input
+                        id="author"
+                        className="form-input"
+                        placeholder="ex: Robert Kiyosaki"
+                        {...register('author')}
+                    />
+                    {errors.author && (
+                        <p className="text-red-600 text-sm">{errors.author.message}</p>
+                    )}
+                </div>
 
                 <div>
                     <label className="form-label">Choose Assistant Voice</label>
