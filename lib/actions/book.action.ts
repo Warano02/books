@@ -22,6 +22,7 @@ export const createBook = async (data: CreateBook) => {
     const book = await Book.create({ ...data, slug, totalSegments: 0 });
     return { success: true, data: serializeData(book) };
   } catch (e) {
+    console.error("error while trying to create a book",e)
     return { success: false, error: "Failed to create book" };
   }
 };

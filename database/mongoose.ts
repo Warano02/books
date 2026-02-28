@@ -26,5 +26,6 @@ export const connectToDatabase = async () => {
     return mongoose;
   });
   cached.conn = await cached.promise;
+  console.log("db connected ")
   return cached.conn;   
 };

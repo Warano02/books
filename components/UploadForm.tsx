@@ -76,7 +76,7 @@ function UploadForm() {
             const fileTitle = data.title.trim().toLowerCase().replace(/\s+/g, '-')
             const fileAuthor = data.author.trim().toLowerCase().replace(/\s+/g, '-')
             const fileName = `${fileTitle}-${fileAuthor}.pdf`
-            const pdfFile = data.pdfFile[0]
+            const pdfFile = data.pdfFile as File
             const parsePdf = await parsePDFFile(pdfFile)
 
             if (!parsePdf.content.length) return toast.error("Failed to parse PDF content. Please try a different file.")
@@ -88,7 +88,7 @@ function UploadForm() {
 
             let coverURL = ''
             if (data.coverImage) {
-                const coverFile = data.coverImage[0]
+                const coverFile = data.coverImage as File
                 const coverName = `${fileTitle}-${fileAuthor}-cover${coverFile.name.substring(coverFile.name.lastIndexOf('.'))}`
                 const uploadedCover = await upload(coverName, coverFile, {
                     access: 'public',
@@ -127,6 +127,10 @@ function UploadForm() {
             toast.success("Book uploaded successfully!")
             form.reset()
             router.replace("/")
+        } catch (e) {
+            toast.error("Failed to upload book")
+            console.log(e);
+
         } finally {
             setSubmitting(false)
         }
