@@ -1,4 +1,4 @@
-"use server"
+"use server";
 import { connectToDatabase } from "@/database/mongoose";
 import { CreateBook, TextSegment } from "@/types";
 import { generateSlug, serializeData } from "../utils";
@@ -22,7 +22,7 @@ export const createBook = async (data: CreateBook) => {
     const book = await Book.create({ ...data, slug, totalSegments: 0 });
     return { success: true, data: serializeData(book) };
   } catch (e) {
-    console.error("error while trying to create a book",e)
+    console.error("error while trying to create a book", e);
     return { success: false, error: "Failed to create book" };
   }
 };
@@ -67,5 +67,15 @@ export const checkBookExists = async (title: string) => {
       : { exists: false };
   } catch (e) {
     return { exists: false, error: "Failed to check book existence" };
+  }
+};
+
+export const getAllBooks = async () => {
+  try {
+    await connectToDatabase();
+    const books = await Book.find({}).sort({ createdAt: -1 }).lean();
+    return { success: true, data: serializeData(books) };
+  } catch (e) {
+    return { success: false, error: e };
   }
 };

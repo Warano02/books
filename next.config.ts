@@ -4,10 +4,8 @@ const nextConfig: NextConfig = {
   /* config options here */
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "covers.openlibrary.org",
-      },
+      {protocol: "https",hostname: "covers.openlibrary.org",},
+      {protocol: "https",hostname: "cjrv0rmpcpv4xxik.public.blob.vercel-storage.com",},
     ],
   },
 };
